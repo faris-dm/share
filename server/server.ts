@@ -1,14 +1,16 @@
 import express, { Request, Response } from "express";
 import dotenv from "dotenv";
-import cookies from "cookie-parser"
-import cors from "cors"
-
+import cookies from "cookie-parser";
+import cors from "cors";
+import signUp from "./Controllers/authController";
 
 dotenv.config();
 const app = express();
-app.use(cookies())
-app.use(cors())
-
+app.use(express());
+app.use(cookies());
+app.use(cors());
+app.use(express.json());
+app.use("/api/signUp", signUp);
 
 app.get("/", (req, res) => {
   console.log("server is running ");
