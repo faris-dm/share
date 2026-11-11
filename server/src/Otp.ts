@@ -8,13 +8,16 @@ const transport = nodemailer.createTransport({
     user: process.env.Owner_Email,
     pass: process.env.Owner_password,
   },
+  tls: {
+    rejectUnauthorized: false, // Disable certificate validation
+  },
 });
 
 export const sendEmail = async (
   to: string,
   subject: string,
   text: string,
-  html: string,
+  html: string
 ) => {
   const mailOptions = {
     from: process.env.Owner_Email, // Sender's email address
