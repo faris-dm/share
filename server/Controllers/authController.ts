@@ -26,7 +26,7 @@ router.post("/signup", async (req: Request, res: Response) => {
     if (!username || !email || !password) {
       return res.status(400).json({
         success: false,
-        message: "Username, email and password are required",
+        message: " email and password are required",
       });
     }
 
@@ -40,7 +40,7 @@ router.post("/signup", async (req: Request, res: Response) => {
     if (existingUser) {
       return res.status(409).json({
         success: false,
-        message: "An account with this email already exists",
+        message: "invalid email or password",
       });
     }
 
@@ -75,7 +75,7 @@ router.post("/signup", async (req: Request, res: Response) => {
     } catch (mailError) {
       console.error("Email failed:", mailError);
       await prisma.user.delete({ where: { id: user.id } }); // otp rows go too (Cascade)
-      return res.status(502).json({
+      return res.status(500).json({
         success: false,
         message: "Could not send the verification email. Please try again.",
       });
@@ -120,7 +120,7 @@ router.post("/signup", async (req: Request, res: Response) => {
 // ---------- Token settings ----------
 const ACCESS_TTL_SECONDS = 15 * 60; // access token lives 15 minutes
 const REFRESH_TTL_SECONDS = 7 * 24 * 60 * 60; // refresh token lives 7 days
-const DEFAULT_ROLE = "student"; // temporary, we will edit this later
+// temporary, we will edit this later
 
 // Hash a token before saving it, so a leaked database can't be used to log in
 function hashToken(token: string) {
@@ -139,8 +139,109 @@ function makeRefreshToken(userId: number) {
   });
 }
 
+router.post("/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Username, email and password are required",
+      });
+    }
+
+    const cleaenEmail = String(email).trim().toLocaleLowerCase();
+    const emailExist = await prisma.user.findUnique({
+      where: { email: cleaenEmail },
+    });
+
+    if (!emailExist) {
+      return res.status(401).json({
+        success: false,
+        message: "An account with this email does not   exists",
+      });
+    }
+
+    const comparePasswords = await bcrypt.compare(
+      String(password),
+      emailExist.password
+    );
+
+    if (!comparePasswords) {
+      return res.status(401).json({
+        success: false,
+        message: "incorrect  email  or password",
+      });
+    }
+    if (emailExist.email_status === "UNVERIFIED") {
+    await prisma.otp.deleteMany({
+      where:{userId:emailExist.id}
+    })
+      const otp = makeOtp();
+      await prisma.otp.create({
+        data: {
+          userId: emailExist.id,
+          otp: hashOtp(otp), // save the hash, not the real token
+          expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+        },
+      });
+
+      try {
+        await sendEmail(
+          cleaenEmail,
+          "Your  login  Verification Code",
+          `Your OTP is ${otp}. It will expire in 10 minutes.`,
+          `<p>Your OTP is <strong>${otp}</strong>. It will expire in 10 minutes.</p>`
+        );
+
+        return res.status(403).json({
+          success: false,
+          message: " please verify your email with the otp we sent",
+        });
+      } catch (mailError) {
+        console.error("Email failed:", mailError);
+
+        return res.status(502).json({
+          success: false,
+          message: "Could not send the verification email. Please try again.",
+        });
+      }
+    }
+
+    const New_Role = emailExist.role;
+    const role = New_Role;
+    const accessToken = makeAccessToken(emailExist.id, role);
+    const refreshToken = makeRefreshToken(emailExist.id);
+
+    // 6. Do all database changes together: all succeed or none do
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: emailExist.id },
+        data: { email_status: "VERIFIED" },
+      }),
+    ]);
+    // temporary, we will edit this later
+
+
+    //  it need the token verifcations  and save in here
+    return res.status(200).json({
+      success: true,
+      message: "user loged in succefully",
+      accessToken,
+      refreshToken,
+    });
+  } catch (mailError) {
+    console.error("Email failed:", mailError);
+    // await prisma.user.delete({ where: { id: user.id } }); // otp rows go too (Cascade)
+    return res.status(502).json({
+      success: false,
+      message: "server error Please try again.",
+    });
+  }
+});
+
 // POST /api/verify-otp
-router.post("/verify-otp", async (req: Request, res: Response) => {
+router.post("/verify/otp", async (req: Request, res: Response) => {
   try {
     const { email, otp } = req.body ?? {};
 
@@ -166,7 +267,7 @@ router.post("/verify-otp", async (req: Request, res: Response) => {
     }
 
     // 2. Already verified, nothing to do
-    if (user.emailStatus === "VERIFIED") {
+    if (user.email_status === "VERIFIED") {
       return res.status(400).json({
         success: false,
         message: "This email is already verified",
@@ -201,7 +302,7 @@ router.post("/verify-otp", async (req: Request, res: Response) => {
     }
 
     // 5. Create the tokens
-    const role = DEFAULT_ROLE;
+    const role = user.role;
     const accessToken = makeAccessToken(user.id, role);
     const refreshToken = makeRefreshToken(user.id);
 
@@ -209,7 +310,7 @@ router.post("/verify-otp", async (req: Request, res: Response) => {
     await prisma.$transaction([
       prisma.user.update({
         where: { id: user.id },
-        data: { emailStatus: "VERIFIED" },
+        data: { email_status: "VERIFIED" },
       }),
       prisma.otp.deleteMany({ where: { userId: user.id } }), // code works only once
       prisma.token.create({
@@ -226,10 +327,7 @@ router.post("/verify-otp", async (req: Request, res: Response) => {
       success: true,
       message: "Email verified successfully",
       user: {
-        id: user.id,
         name: user.name,
-        email: user.email,
-        role,
       },
       accessToken,
       refreshToken,
