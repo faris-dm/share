@@ -3,7 +3,9 @@ import prisma from "../model/db";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
+import cookieParser from "cookie-parser";
 import { sendEmail } from "../src/Otp";
+import { Pool } from "pg";
 
 const router = Router();
 
@@ -174,9 +176,9 @@ router.post("/login", async (req, res) => {
       });
     }
     if (emailExist.email_status === "UNVERIFIED") {
-    await prisma.otp.deleteMany({
-      where:{userId:emailExist.id}
-    })
+      await prisma.otp.deleteMany({
+        where: { userId: emailExist.id },
+      });
       const otp = makeOtp();
       await prisma.otp.create({
         data: {
@@ -201,6 +203,8 @@ router.post("/login", async (req, res) => {
       } catch (mailError) {
         console.error("Email failed:", mailError);
 
+        
+
         return res.status(502).json({
           success: false,
           message: "Could not send the verification email. Please try again.",
@@ -223,6 +227,33 @@ router.post("/login", async (req, res) => {
     // temporary, we will edit this later
 
 
+
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+     await prisma.token.create({
+        data: {
+          userId: emailExist.id,
+          token: refreshToken,
+          expiresAt: expiresAt,
+        },
+      });
+
+
+      res.cookie("token",accessToken,{
+        httpOnly:true,
+        secure:true,
+        sameSite:"none",
+        maxAge:15*60* 1000
+      })
+
+
+      res.cookie("refreshToken",refreshToken,{
+        httpOnly:true,
+        secure:true,
+        sameSite:"none",
+        maxAge:7*24*60*60*1000,
+      })
+      
     //  it need the token verifcations  and save in here
     return res.status(200).json({
       success: true,
@@ -239,6 +270,33 @@ router.post("/login", async (req, res) => {
     });
   }
 });
+
+
+router.post("/logout", async (req,res)=> {
+try {
+  const { refreshToken } = req.cookies;
+  if (refreshToken) {
+    await prisma.token.deleteMany({
+      where: { token: refreshToken },
+    });
+
+    const cookieOption = {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none" as const,
+    };
+
+    res.clearCookie("token", cookieOption);
+    res.clearCookie("refreshToken", cookieOption);
+  }
+  return res
+    .status(200)
+    .json({ success: true, message: "Logged out successfully" });
+} catch (error) {
+  console.log(error);
+  return res.status(500).json({ success: false, message: "server failed" });
+}
+})
 
 // POST /api/verify-otp
 router.post("/verify/otp", async (req: Request, res: Response) => {
