@@ -17,12 +17,20 @@ enum UserEmailStatus {
 VERIFIED
 UNVERIFIED
 }
+
+
+enum Role {
+  Admin
+  Teacher
+  Student
+}
 model User {
   id      Int @id @default(autoincrement())
   name      String
   email     String   @unique
   password  String
   email_status UserEmailStatus @default(UNVERIFIED)
+  role     Role   @default(Student)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
