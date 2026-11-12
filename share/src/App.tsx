@@ -31,16 +31,11 @@
 import React, { useState } from "react";
 
 function App() {
-  const [show, setShow] = useState(true);
-  function change() {
-    setShow(!show);
-  }
+
   return (
     <div>
       <div>
         <p>input your password</p>
-        <input type={show ? "text" : "password"} className="border" />
-        <p onClick={change}>{show ? "hide" : "show"}</p>
       </div>
     </div>
   );
